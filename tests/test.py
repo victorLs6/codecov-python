@@ -6,7 +6,7 @@ import zlib
 from ddt import ddt, data
 from mock import patch, Mock
 import unittest
-
+from io import StringIO
 import subprocess
 
 import codecov
@@ -165,6 +165,37 @@ class TestUploader(unittest.TestCase):
             bool(codecov.ignored_path("/home/ubuntu/" + path + "/more paths")),
             path + " should be ignored",
         )
+    
+    @patch('sys.stdout', new_callable=StringIO)
+    def test_complete_write(self, mock_stdout):
+        codecov.write("http://example.com")
+        self.assertIn("\033[92mhttp://example.com\033[0m", mock_stdout.getvalue().strip())
+        mock_stdout.truncate(0)
+        mock_stdout.seek(0) #testing for only color
+        codecov.write("Red case", color="red")
+        self.assertIn("\033[91mRed case\033[0m", mock_stdout.getvalue().strip())
+        mock_stdout.truncate(0)
+        mock_stdout.seek(0) 
+        codecov.write("Green case", color="green")
+        self.assertIn("\033[92mGreen case\033[0m", mock_stdout.getvalue().strip())
+
+    def test_remove_ascii(self):
+        data = b'\x80Testing'
+        result = codecov.remove_non_ascii(data)
+        self.assertEqual(result, "Testing")
+
+    @patch('os.getenv', return_value=None)
+    def test_add_env_if_not_empty_env_not_set(self, mock_getenv):
+        lst = set()
+        codecov._add_env_if_not_empty(lst, 'my_variable')    
+        self.assertNotIn('my_variable', lst)
+
+    @patch('os.getenv', return_value='value')
+    def test_add_env_if_not_empty_env_set(self, mock_getenv):
+        lst = set()
+        codecov._add_env_if_not_empty(lst, 'my_variable')
+        self.assertIn('my_variable', lst)    
+    
 
     @data(
         "coverage.xml",
@@ -237,7 +268,7 @@ class TestUploader(unittest.TestCase):
     )
     def test_returns_none(self):
         with patch("requests.post") as post:
-            with patch("requests.put") as put:
+            with patch("requests.put") as put:  
                 post.return_value = Mock(status_code=200, text="target\ns3")
                 put.return_value = Mock(status_code=200)
                 with open(self.filepath, "w+") as f:
@@ -372,15 +403,21 @@ class TestUploader(unittest.TestCase):
             self.skipTest("Skipped, works on Travis only.")
 
     def test_gcov(self):
-        self.skipTest("Need to fix this test...")
-        # if self._env.get('TRAVIS') == 'true':
-        #     self.write_c()
-        #     output = self.run_cli(token='a', branch='b', commit='c')
-        #     self.assertEqual(os.path.exists('hello.c.gcov'), True)
-        #     report = output['reports'].split('<<<<<< network\n')[1].splitlines()
-        #     self.assertIn('hello.c.gcov', report[0])
-        # else:
-        #     self.skipTest("Skipped, works on Travis only.")
+         if self._env.get('TRAVIS') == 'true':
+            try:
+                self.write_c()
+                output = self.run_cli(token='a', branch='b', commit='c')
+                self.assertEqual(os.path.exists('hello.c.gcov'), True)
+                try:
+                    report = output['reports'].split('<<<<<< network\n')[1].splitlines()
+                    self.assertIn('hello.c.gcov', report[0])
+                except (IndexError, KeyError) as e:
+                     self.fail(f"Report parsing failed: {e}")
+            except Exception as e:
+                self.fail(f"Test setup or execution failed: {e}")
+         
+         else:
+             self.skipTest("Skipped, works on Travis only.")
 
     def test_disable_detect(self):
         self.set_env(
@@ -729,8 +766,8 @@ class TestUploader(unittest.TestCase):
         self.assertEqual(res["codecov"].token, "token")
         self.assertEqual(res["codecov"].name, "name")
 
-    # @unittest.skipUnless(os.getenv('CI') == "True" and os.getenv('APPVEYOR') == 'True', 'Skip AppVeyor CI test')
-    @unittest.skip("Skip AppVeyor test")
+    @unittest.skipUnless(os.getenv('CI') == "True" and os.getenv('APPVEYOR') == 'True', 'Skip AppVeyor CI test')
+    #@unittest.skip("Skip AppVeyor test")
     def test_ci_appveyor(self):
         self.set_env(
             APPVEYOR="True",

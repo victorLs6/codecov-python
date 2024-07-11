@@ -157,6 +157,7 @@ def write(text, color=None):
         elif text[:4] == "Tip:":
             text = "\033[42mTip:\033[0m\033[32m%s\033[0m" % text[4:]
         elif text.strip()[:4] == "http":
+           # text = "\033[92m%s\033[0m" % text
             text = "\033[92m%s\033[0m" % text
         elif text[:7] == "Codecov":
             text = (
